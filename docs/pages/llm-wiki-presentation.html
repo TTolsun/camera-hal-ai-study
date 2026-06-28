@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM Wiki — 프로젝트 맥락 인프라</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap');
+
+  :root{
+    --bg:#0a0e14;
+    --bg-2:#0d1117;
+    --panel:#121822;
+    --line:#1e2733;
+    --ink:#e6edf3;
+    --ink-dim:#8b98a8;
+    --node:#f0b429;      /* 호박색: 지식 단위 */
+    --edge:#2dd4bf;      /* 청록: 연결/관계 */
+    --edge-dim:#155e57;
+    --warn:#f87171;
+    --warn-dim:#3a2a2a;
+    --mono:'IBM Plex Mono',monospace;
+    --disp:'Space Grotesk','IBM Plex Sans KR',sans-serif;
+    --body:'IBM Plex Sans KR','Space Grotesk',sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    background:var(--bg);color:var(--ink);font-family:var(--body);
+    overflow:hidden;-webkit-font-smoothing:antialiased;
+  }
+  .bgfield{position:fixed;inset:0;z-index:0;opacity:.35;
+    background-image:radial-gradient(circle at 1px 1px,#1b2532 1px,transparent 0);
+    background-size:34px 34px;
+    mask-image:radial-gradient(ellipse 80% 70% at 50% 40%,#000 40%,transparent 100%);
+  }
+  .deck{position:relative;z-index:1;height:100vh;width:100vw}
+  .slide{
+    position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
+    padding:clamp(26px,5.5vw,90px);
+    opacity:0;transform:translateY(14px);
+    transition:opacity .45s ease,transform .45s ease;pointer-events:none;
+    overflow-y:auto;
+  }
+  .slide.active{opacity:1;transform:none;pointer-events:auto}
+
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.3em;
+    text-transform:uppercase;color:var(--edge);
+    display:flex;align-items:center;gap:12px;margin-bottom:20px}
+  .eyebrow::before{content:"";width:32px;height:1px;background:var(--edge)}
+
+  h1{font-family:var(--disp);font-weight:700;
+    font-size:clamp(2.4rem,6.2vw,5rem);line-height:1.02;
+    letter-spacing:-.02em;margin-bottom:24px}
+  h2{font-family:var(--disp);font-weight:600;
+    font-size:clamp(1.7rem,3.9vw,3rem);line-height:1.08;
+    letter-spacing:-.015em;margin-bottom:24px}
+  .lead{font-size:clamp(1rem,1.95vw,1.4rem);color:var(--ink-dim);
+    max-width:60ch;line-height:1.55;font-weight:400}
+  strong{color:var(--ink);font-weight:600}
+  .hi-node{color:var(--node)}
+  .hi-edge{color:var(--edge)}
+
+  .def{border-left:2px solid var(--node);padding:16px 0 16px 26px;margin:6px 0;
+    font-family:var(--disp);font-weight:500;
+    font-size:clamp(1.25rem,2.5vw,1.95rem);line-height:1.35;max-width:30ch}
+
+  .title-block p{font-size:clamp(1.05rem,2.1vw,1.6rem);line-height:1.5;color:var(--ink-dim);margin-top:8px}
+  .title-block .l2{color:var(--ink);font-weight:500;margin-top:22px}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:clamp(16px,3vw,40px);align-items:start}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:clamp(16px,2.2vw,28px)}
+  .card .tag{font-family:var(--mono);font-size:.68rem;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--ink-dim);margin-bottom:12px;display:block}
+  .card.before{border-color:var(--warn-dim)}
+  .card.before .tag{color:var(--warn)}
+  .card.after{border-color:var(--edge-dim)}
+  .card.after .tag{color:var(--edge)}
+  .card p{line-height:1.5;font-size:clamp(.92rem,1.6vw,1.1rem)}
+  .quote-q{color:var(--ink-dim);font-style:italic}
+
+  ul.clean{list-style:none;display:flex;flex-direction:column;gap:13px;margin-top:6px}
+  ul.clean li{display:flex;gap:14px;align-items:baseline;
+    font-size:clamp(.98rem,1.8vw,1.25rem);line-height:1.4}
+  ul.clean li .n{font-family:var(--mono);color:var(--node);font-size:.85em;
+    min-width:1.6em;font-weight:600}
+
+  /* 구성 요소 칩 그리드 */
+  .chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:6px}
+  .chip{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+  .chip .h{font-family:var(--mono);font-size:.82rem;color:var(--node);font-weight:600}
+  .chip .s{font-size:.84rem;color:var(--ink-dim);line-height:1.35}
+
+  /* before/after 리스트 */
+  .ba-list{list-style:none;display:flex;flex-direction:column;gap:10px;margin-top:4px}
+  .ba-list li{font-size:clamp(.92rem,1.65vw,1.12rem);line-height:1.4;display:flex;gap:10px}
+  .ba-list.miss li::before{content:"✕";color:var(--warn);font-family:var(--mono);font-size:.85em}
+  .ba-list.know li::before{content:"✓";color:var(--edge);font-family:var(--mono);font-size:.85em}
+  .ba-sub{font-family:var(--mono);font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-dim);margin:18px 0 8px}
+
+  /* tech stack flow */
+  .stack{display:flex;flex-direction:column;gap:9px;max-width:780px}
+  .layer{display:grid;grid-template-columns:182px 1fr;gap:18px;align-items:center;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:12px 18px;position:relative}
+  .layer .name{font-family:var(--mono);font-weight:600;font-size:.88rem;color:var(--edge)}
+  .layer.graph .name{color:var(--node)}
+  .layer .desc{color:var(--ink-dim);font-size:.92rem;line-height:1.35}
+  .layer:not(:last-child)::after{content:"↓";position:absolute;left:82px;bottom:-14px;
+    color:var(--edge-dim);font-size:.78rem;z-index:2}
+  @media(max-width:560px){.layer{grid-template-columns:1fr;gap:3px}.layer:not(:last-child)::after{left:50%}}
+
+  .graphbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:22px;display:flex;justify-content:center}
+  svg .nd circle{fill:var(--node)}
+  svg .nd text{fill:var(--bg);font-family:var(--mono);font-weight:600;font-size:11px}
+  svg .lbl{fill:var(--ink);font-family:var(--mono);font-size:11.5px}
+  svg .ed{stroke:var(--edge);stroke-width:1.6;fill:none}
+  svg .ed-lbl{fill:var(--edge);font-family:var(--mono);font-size:10px;opacity:.85}
+
+  /* graph 세 종류 = 지도 */
+  .maps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:8px}
+  @media(max-width:780px){.maps{grid-template-columns:1fr}}
+  .map{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px}
+  .map .k{font-family:var(--mono);font-size:.95rem;font-weight:600;color:var(--node);margin-bottom:8px}
+  .map .d{color:var(--ink);font-size:1rem;font-weight:500;margin-bottom:4px}
+  .map .e{color:var(--ink-dim);font-size:.86rem;line-height:1.35}
+
+  .key-distinction{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:8px}
+  @media(max-width:680px){.key-distinction{grid-template-columns:1fr}}
+  .kd{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px}
+  .kd .k{font-family:var(--mono);font-size:1.05rem;font-weight:600;margin-bottom:10px}
+  .kd.know .k{color:var(--node)}
+  .kd.lang .k{color:var(--edge)}
+  .kd p{color:var(--ink-dim);line-height:1.5;font-size:1rem}
+
+  /* 장단점 + 운영원칙 3열 */
+  .tri{display:grid;grid-template-columns:1fr 1fr 1.1fr;gap:clamp(16px,2.6vw,36px)}
+  @media(max-width:880px){.tri{grid-template-columns:1fr;gap:20px}}
+  .col-h{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
+    margin-bottom:13px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .col-pro .col-h{color:var(--edge)}
+  .col-con .col-h{color:var(--warn)}
+  .col-ops .col-h{color:var(--node)}
+  .tri ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+  .tri li{display:flex;gap:10px;line-height:1.38;font-size:clamp(.88rem,1.5vw,1.05rem);color:var(--ink-dim)}
+  .tri li::before{content:"—";color:var(--line)}
+  .col-pro li::before{color:var(--edge-dim)}
+  .col-ops li::before{content:"›";color:var(--node);font-family:var(--mono)}
+
+  .closer{font-family:var(--disp);font-weight:600;
+    font-size:clamp(1.4rem,3.2vw,2.5rem);line-height:1.3;max-width:24ch;letter-spacing:-.01em}
+  .mic-drop{margin-top:36px;border-top:1px solid var(--line);padding-top:26px;
+    font-size:clamp(1.05rem,2vw,1.45rem);line-height:1.5;color:var(--ink);max-width:48ch}
+  .mic-drop strong{color:var(--edge)}
+
+  .nav{position:fixed;bottom:22px;right:28px;z-index:10;display:flex;align-items:center;gap:18px;
+    font-family:var(--mono);font-size:.8rem;color:var(--ink-dim)}
+  .nav button{background:var(--panel);border:1px solid var(--line);color:var(--ink);
+    width:38px;height:38px;border-radius:9px;cursor:pointer;font-size:1rem;
+    transition:border-color .2s,color .2s}
+  .nav button:hover{border-color:var(--edge);color:var(--edge)}
+  .nav .count{min-width:54px;text-align:center;letter-spacing:.1em}
+  .progress{position:fixed;top:0;left:0;height:2px;background:var(--edge);z-index:10;
+    transition:width .4s ease;box-shadow:0 0 12px var(--edge)}
+  .hint{position:fixed;bottom:26px;left:28px;z-index:10;font-family:var(--mono);
+    font-size:.72rem;color:var(--ink-dim);letter-spacing:.08em}
+  kbd{background:var(--panel);border:1px solid var(--line);border-radius:5px;
+    padding:1px 7px;font-family:var(--mono);font-size:.72rem;color:var(--ink)}
+  @media (prefers-reduced-motion:reduce){.slide{transition:opacity .01s}}
+
+  /* 모바일: 좌우 탭존 + 큰 버튼 */
+  .tapzone{position:fixed;top:0;bottom:0;width:22%;z-index:5;
+    -webkit-tap-highlight-color:transparent;cursor:pointer;display:none}
+  .tapzone.left{left:0}
+  .tapzone.right{right:0}
+  @media (hover:none) and (pointer:coarse){
+    .tapzone{display:block}
+    .nav button{width:54px;height:54px;font-size:1.4rem;border-radius:12px}
+    .nav{bottom:18px;right:18px;gap:14px}
+    .slide{padding-bottom:96px}
+    body.notes-open .slide{padding-bottom:260px}
+  }
+
+  /* 발표자 노트 패널 */
+  .notes{position:fixed;left:0;right:0;bottom:0;z-index:20;
+    background:rgba(8,11,16,.97);border-top:1px solid var(--edge-dim);
+    padding:20px clamp(26px,5.5vw,90px) 22px;
+    transform:translateY(100%);transition:transform .32s ease;
+    backdrop-filter:blur(8px)}
+  .notes.show{transform:none}
+  .notes .nh{font-family:var(--mono);font-size:.66rem;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--edge);margin-bottom:9px;display:flex;
+    align-items:center;gap:10px}
+  .notes .nh::before{content:"";width:24px;height:1px;background:var(--edge)}
+  .notes .nbody{font-size:clamp(.92rem,1.6vw,1.12rem);line-height:1.55;color:var(--ink);
+    max-width:92ch}
+  body.notes-open .hint{display:none}
+  body.notes-open .slide{padding-bottom:220px}
+  body.notes-open .nav{bottom:auto;top:18px}
+</style>
+</head>
+<body>
+<div class="bgfield"></div>
+<div class="progress" id="prog"></div>
+
+<div class="deck" id="deck">
+
+  <!-- 0 : TITLE -->
+  <section class="slide active" data-note="첫 문장에서 결론을 먼저 말합니다. 'Wiki는 지식을 빠르게 만들고 연결하는 방식이고, LLM Wiki는 그 지식을 AI Agent가 실무 작업에 활용하게 만드는 프로젝트 맥락 인프라입니다.' — 오늘 이 한 문장만 기억하면 됩니다. ⏱ 약 1분.">
+    <div class="eyebrow">AI Study · 프로젝트 맥락 인프라</div>
+    <h1>LLM Wiki</h1>
+    <div class="title-block">
+      <p>Wiki는 지식을 빠르게 만들고 <span class="hi-edge">연결</span>하는 방식이다.</p>
+      <p class="l2">LLM Wiki는 그 지식을<br>
+      <strong>AI Agent가 실무 작업에 활용하게</strong> 만드는<br>
+      프로젝트 맥락 인프라다.</p>
+    </div>
+  </section>
+
+  <!-- 1 : WIKI 정의 -->
+  <section class="slide" data-note="Wiki 하면 Wikipedia를 떠올리지만, 원래 핵심은 백과사전이 아니라 협업 방식입니다. 본질은 문서 저장이 아니라 '지식 업데이트 방식'이에요. 빠르게 만들고, 계속 고치고, 서로 연결한다 — 이 셋이 뒤에서 Graph로 이어집니다.">
+    <div class="eyebrow">01 — Wiki란 무엇인가</div>
+    <h2>Wikipedia가 아니라,<br>협업 방식이다</h2>
+    <div class="grid2">
+      <div>
+        <p class="lead">Wiki의 본질은 <strong>문서 저장</strong>이 아니라 <strong>지식 업데이트 방식</strong>이다.
+        여러 사람이 지식을 다루는 협업 시스템.</p>
+      </div>
+      <ul class="clean" style="margin-top:0">
+        <li><span class="n">01</span><span><strong>빠르게 만든다</strong> — 진입 장벽 없이 즉시 작성</span></li>
+        <li><span class="n">02</span><span><strong>계속 고친다</strong> — 공동 편집으로 진화</span></li>
+        <li><span class="n">03</span><span><strong>서로 연결한다</strong> — 링크로 문서를 잇는다</span></li>
+      </ul>
+    </div>
+    <p class="lead" style="margin-top:32px">정적인 문서함이 아니라,
+    <span class="hi-edge">지식이 계속 자라고 연결되는 구조</span>다.</p>
+  </section>
+
+  <!-- 2 : 핵심은 연결 -->
+  <section class="slide" data-note="문서가 폴더에 쌓이면 자료 모음, 서로 연결되면 지식 구조입니다. AI에게는 이 연결이 결정적입니다 — 어떤 모듈이 어떤 flow에 속하는지, 무엇을 바꾸면 어디가 영향받는지 따라갈 수 있으니까요. 오른쪽 그래프가 바로 Camera HAL의 flow 연결입니다.">
+    <div class="eyebrow">02 — Wiki의 핵심은 "연결"</div>
+    <h2>문서가 연결되면<br>지식 <span class="hi-node">구조</span>가 된다</h2>
+    <div class="grid2" style="align-items:center">
+      <p class="lead">폴더에 쌓이면 <strong>자료 모음</strong>, 서로 연결되면 <strong>지식 구조</strong>.
+      AI 입장에서 이 연결이 결정적이다 — 어떤 모듈이 어떤 flow에 속하고,
+      어떤 변경이 어떤 dependency를 건드리는지 따라갈 수 있다.</p>
+      <div class="graphbox">
+        <svg viewBox="0 0 320 230" width="100%" style="max-width:340px">
+          <line class="ed" x1="78" y1="34" x2="78" y2="96"/>
+          <line class="ed" x1="78" y1="96" x2="78" y2="158"/>
+          <line class="ed" x1="78" y1="158" x2="78" y2="196"/>
+          <line class="ed" x1="78" y1="96" x2="180" y2="158"/>
+          <g class="nd"><circle cx="78" cy="34" r="12"/></g>
+          <g class="nd"><circle cx="78" cy="96" r="12"/></g>
+          <g class="nd"><circle cx="78" cy="158" r="12"/></g>
+          <g class="nd"><circle cx="78" cy="196" r="12"/></g>
+          <g class="nd"><circle cx="180" cy="158" r="12"/></g>
+          <text class="lbl" x="98" y="38">Request Flow</text>
+          <text class="lbl" x="98" y="100">Metadata Flow</text>
+          <text class="lbl" x="98" y="162">Buffer / Fence</text>
+          <text class="lbl" x="98" y="200">Vendor Rule</text>
+          <text class="lbl" x="200" y="162">Perf. Rule</text>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 : LLM Wiki 정의 -->
+  <section class="slide" data-note="LLM Wiki는 AI에게 주는 README가 아니라 작업용 맥락 지도입니다. '그래서 이거 Confluence야? README야? Vector DB야?'라는 질문이 꼭 나오는데 — 저장 위치는 보통 repo 안 markdown이고, 핵심은 위치가 아니라 맥락 관리 방식이라고 못 박으세요.">
+    <div class="eyebrow">03 — LLM Wiki란 무엇인가</div>
+    <div class="def">AI Agent가 프로젝트를 이해하고<br>작업하기 위한<br><span class="hi-node">구조화된 프로젝트 지식 문서</span></div>
+    <p class="lead" style="margin-top:26px">사람용 Wiki에서 <strong>AI용 작업 맥락</strong>으로 확장한 것.</p>
+    <p class="lead" style="margin-top:22px;border-top:1px solid var(--line);padding-top:22px">
+    <span class="hi-edge">한 줄 정의 —</span> LLM Wiki는 AI에게 주는 README가 아니라,
+    AI가 프로젝트에서 일할 때 참고하는 <strong>작업용 맥락 지도</strong>다.</p>
+    <p class="lead" style="margin-top:18px;font-size:clamp(.88rem,1.5vw,1.05rem)">
+    보통 <strong>repo 안의 markdown 문서</strong>로 두고, Agent가 작업 전에 읽거나
+    RAG/Search로 참조하게 만든다. Confluence, README, Vector DB 중 어디에 두느냐보다
+    핵심은 <span class="hi-edge">AI가 참고할 맥락을 구조화하고 최신으로 유지하는 방식</span>이다.</p>
+  </section>
+
+  <!-- 4 : 무엇이 들어가는가 (신규) -->
+  <section class="slide" data-note="LLM Wiki는 프로젝트의 '판단 기준'을 외부화하는 겁니다. 두 번째로 중요한 슬라이드예요. Camera HAL 버전을 강조하세요. 맨 아래 Agent Instruction은 말로 예시를 듭니다 — ①변경 전 관련 Wiki 먼저 확인 ②public/vendor interface 변경은 승인 없이 금지 ③성능 path 변경 시 allocation·lock·thread 전환 체크 ④수정 후 영향 범위와 테스트 요약.">
+    <div class="eyebrow">04 — LLM Wiki에는 무엇이 들어가는가</div>
+    <h2>프로젝트의 <span class="hi-node">판단 기준</span>을<br>외부화한다</h2>
+    <div class="chips">
+      <div class="chip"><span class="h">Architecture</span><span class="s">전체 구조 개요</span></div>
+      <div class="chip"><span class="h">Flow</span><span class="s">Request / Metadata / Buffer</span></div>
+      <div class="chip"><span class="h">Module Ownership</span><span class="s">누가 무엇을 책임지나</span></div>
+      <div class="chip"><span class="h">Coding Rule</span><span class="s">팀 규칙·컨벤션</span></div>
+      <div class="chip"><span class="h">변경 금지 영역</span><span class="s">건드리면 안 되는 boundary</span></div>
+      <div class="chip"><span class="h">성능 민감 path</span><span class="s">allocation 금지 구간 등</span></div>
+      <div class="chip"><span class="h">자주 깨지는 테스트</span><span class="s">CTS / DNG 영향</span></div>
+      <div class="chip"><span class="h">Design Decision</span><span class="s">왜 이렇게 됐는가</span></div>
+      <div class="chip"><span class="h">Agent Instruction</span><span class="s">AI 작업 지침</span></div>
+    </div>
+    <p class="lead" style="margin-top:24px;font-size:clamp(.92rem,1.6vw,1.12rem)">
+    Camera HAL 버전 — RequestThread의 책임 / Metadata 변환 지점 / Buffer·Fence ownership /
+    Vendor interface 유지 범위 / SAT 공통화 시 변경 금지 boundary.</p>
+  </section>
+
+  <!-- 5 : 적용 전 -->
+  <section class="slide" data-note="★ 가장 중요한 파트(5~6번)입니다. 여기에 시간을 제일 많이 쓰세요. '코드만 보는 AI는 일반적으로 좋은 코드를 말합니다. 하지만 우리가 필요한 건 일반적으로 좋은 코드가 아니라, 이 프로젝트에서 안전한 변경입니다.' 오른쪽의 '모르는 것' 5개를 청중(Camera HAL 엔지니어)에게 하나씩 짚으세요.">
+    <div class="eyebrow">05 — 적용 전</div>
+    <h2>코드만 보는 AI는<br>"<span style="color:var(--warn)">좋은 코드</span>"를 말한다</h2>
+    <div class="grid2">
+      <div>
+        <span class="ba-sub">AI의 조언</span>
+        <ul class="ba-list miss" style="margin-top:0">
+          <li>큰 클래스니까 분리하세요</li>
+          <li>공통 로직으로 빼세요</li>
+          <li>enum 이름을 단순화하세요</li>
+          <li>테스트를 추가하세요</li>
+        </ul>
+      </div>
+      <div>
+        <span class="ba-sub" style="color:var(--warn)">하지만 모르는 것</span>
+        <ul class="ba-list miss" style="margin-top:0">
+          <li>HAL lifecycle 제약</li>
+          <li>vendor interface 제약</li>
+          <li>metadata compatibility</li>
+          <li>buffer / fence ownership</li>
+          <li>performance-sensitive path</li>
+        </ul>
+      </div>
+    </div>
+    <p class="lead" style="margin-top:26px">틀린 말은 아니다. 그러나 <strong>실무에서는 위험한 답</strong>이 될 수 있다.</p>
+  </section>
+
+  <!-- 6 : 적용 후 -->
+  <section class="slide" data-note="★ 발표의 핵심 슬라이드. 이 5개는 개념이 아니라 Camera HAL 엔지니어가 바로 이해하는 판단 기준입니다. 'Before의 AI는 좋은 코드를 말하고, After의 AI는 이 프로젝트에서 안전한 변경을 말합니다.' 이 대비 한 문장이 청중 머리에 남으면 발표는 성공입니다.">
+    <div class="eyebrow">06 — 적용 후</div>
+    <h2>맥락을 보는 AI는<br>"<span class="hi-edge">이 프로젝트에서 안전한 변경</span>"을 말한다</h2>
+    <ul class="ba-list know" style="max-width:62ch">
+      <li><strong>public / vendor interface는 유지</strong> — 깨면 안 되는 경계 인지</li>
+      <li><strong>capture request path에서는 allocation 금지</strong> — 성능 path 인지</li>
+      <li><strong>metadata 변환은 compat layer에서 처리</strong> — 호환성 인지</li>
+      <li><strong>buffer / fence ownership 변경 금지</strong> — 소유권 규칙 인지</li>
+      <li><strong>helper 분리는 내부 함수부터 시작</strong> — 안전한 리팩터 순서</li>
+    </ul>
+    <p class="lead" style="margin-top:26px;border-top:1px solid var(--line);padding-top:22px">
+    Before의 AI는 <span style="color:var(--warn)">좋은 코드</span>를 말하고,
+    After의 AI는 <span class="hi-edge">이 프로젝트에서 안전한 변경</span>을 말한다.</p>
+  </section>
+
+  <!-- 7 : Graph로 보는 LLM Wiki -->
+  <section class="slide" data-note="Graph는 수학이 아니라 관계 지도입니다. Node=지식 단위, Edge=관계. '무엇이 무엇과 연결되고, 무엇을 바꾸면 어디가 영향받는지'를 표현하는 방식이에요. ⚠ 여기에 취해서 8분 쓰지 마세요 — 길어지면 '관계 지도'가 아니라 '개념 미로'가 됩니다. 빠르게.">
+    <div class="eyebrow">07 — Graph로 보는 LLM Wiki</div>
+    <h2>Graph는 수학이 아니라<br><span class="hi-edge">관계 지도</span>다</h2>
+    <div class="grid2" style="align-items:center">
+      <div>
+        <p class="lead" style="margin-bottom:16px"><span class="hi-node">Node</span> = 지식 단위
+        <span style="color:var(--ink-dim);font-size:.9em">(module · class · 문서 · rule · issue)</span></p>
+        <p class="lead"><span class="hi-edge">Edge</span> = 관계
+        <span style="color:var(--ink-dim);font-size:.9em">(참조 · 의존 · 호출 · 영향 · 제약)</span></p>
+      </div>
+      <div class="graphbox">
+        <svg viewBox="0 0 320 200" width="100%" style="max-width:340px">
+          <line class="ed" x1="70" y1="36" x2="70" y2="100"/>
+          <line class="ed" x1="70" y1="100" x2="70" y2="164"/>
+          <g class="nd"><circle cx="70" cy="36" r="12"/></g>
+          <g class="nd"><circle cx="70" cy="100" r="12"/></g>
+          <g class="nd"><circle cx="70" cy="164" r="12"/></g>
+          <text class="lbl" x="90" y="40">CaptureRequest</text>
+          <text class="ed-lbl" x="222" y="40">→ Metadata 참조</text>
+          <text class="lbl" x="90" y="104">RequestThread</text>
+          <text class="ed-lbl" x="222" y="104">→ Buffer/Fence 영향</text>
+          <text class="lbl" x="90" y="168">Common Logic</text>
+          <text class="ed-lbl" x="222" y="168">→ Vendor 제약</text>
+        </svg>
+      </div>
+    </div>
+    <p class="lead" style="margin-top:22px;font-size:clamp(.9rem,1.55vw,1.1rem)">
+    잘 만든 LLM Wiki는 단순 문서 모음이 아니라 <strong>프로젝트 지식 그래프</strong>가 된다.</p>
+  </section>
+
+  <!-- 8 : 관련 기술 (수정) -->
+  <section class="slide" data-note="LLM Wiki는 혼자 동작하지 않습니다. 한 줄로 정리: 'LLM Wiki는 저장하고, Graph는 관계를 표현하고, RAG는 찾아오고, Agent는 그걸 써서 일한다.' Tool 레이어는 우리 환경 기준 Gerrit·CI·Build·Test·Issue Tracker입니다. ⚠ 보정: LangGraph는 'Tool 다음에 도는 마지막 단계'가 아니라, Agent가 어떤 순서로 판단하고 도구를 쓸지 흐름을 정의하는 프레임워크라고 말로 짚으세요.">
+    <div class="eyebrow">08 — 관련 기술</div>
+    <h2>각자 다른 일을 한다</h2>
+    <div class="stack">
+      <div class="layer"><span class="name">LLM Wiki</span><span class="desc">프로젝트 지식 저장 — 구조 · 규칙 · 의도 · 금지 영역</span></div>
+      <div class="layer graph"><span class="name">Graph</span><span class="desc">문서 · 개념 · 코드 관계 표현 (Document / Knowledge / Code)</span></div>
+      <div class="layer"><span class="name">Search / RAG</span><span class="desc">필요한 맥락을 인덱싱·검색해서 가져온다</span></div>
+      <div class="layer"><span class="name">LLM</span><span class="desc">가져온 context를 읽고 판단한다</span></div>
+      <div class="layer"><span class="name">Agent / ReAct</span><span class="desc">생각 → 행동 → 결과 확인 → 다시 판단</span></div>
+      <div class="layer"><span class="name">Tool / MCP</span><span class="desc">Gerrit · CI · Build · Test · Issue Tracker 연결</span></div>
+      <div class="layer"><span class="name">LangGraph</span><span class="desc">Agent 실행 흐름을 Node/Edge로 제어</span></div>
+    </div>
+  </section>
+
+  <!-- 9 : Knowledge Graph vs LangGraph -->
+  <section class="slide" data-note="이름이 비슷해서 자주 뭉개지는 지점입니다. Knowledge Graph는 '무엇이 무엇과 관련 있는가'(지식 관계), LangGraph는 'Agent가 어떤 순서로 일하는가'(실행 흐름). 세 지도로 기억하세요 — 문서의 지도 / 프로젝트의 지도 / Agent 행동의 지도. 이걸 안 나누면 'LangGraph 쓰면 Knowledge Graph 되나요?' 질문이 나옵니다.">
+    <div class="eyebrow">09 — 핵심 구분</div>
+    <h2>Knowledge Graph와 LangGraph는<br>다른 문제를 푼다</h2>
+    <div class="key-distinction">
+      <div class="kd know">
+        <div class="k">Knowledge Graph</div>
+        <p>"<strong>무엇이 무엇과</strong> 관련 있는가"를 표현한다. 프로젝트 지식의 지도.</p>
+      </div>
+      <div class="kd lang">
+        <div class="k">LangGraph / Workflow</div>
+        <p>"Agent가 <strong>어떤 순서로</strong> 일할 것인가"를 표현한다. 실행 흐름의 지도.</p>
+      </div>
+    </div>
+    <div class="maps" style="margin-top:20px">
+      <div class="map"><div class="k">Document Graph</div><div class="d">문서의 지도</div><div class="e">문서 ↔ 문서 연결</div></div>
+      <div class="map"><div class="k">Knowledge / Code</div><div class="d">프로젝트의 지도</div><div class="e">개념 · 코드 · 의존성</div></div>
+      <div class="map"><div class="k">Workflow Graph</div><div class="d">Agent 행동의 지도</div><div class="e">작업 순서의 연결</div></div>
+    </div>
+  </section>
+
+  <!-- 10 : 장단점 + 운영 원칙 -->
+  <section class="slide" data-note="단점만 말하면 발표가 불평으로 끝납니다 — 바로 운영 원칙(해결책)을 줍니다. 핵심 경고: 오래된 Wiki는 그냥 낡은 문서가 아니라 AI에게 '잘못된 확신'을 주는 위험한 문서가 됩니다. 그래서 Owner를 정하고 코드 변경과 함께 갱신하는 게 필수입니다.">
+    <div class="eyebrow">10 — 장단점과 운영 원칙</div>
+    <h2>오래된 Wiki는 AI에게<br><span style="color:var(--warn)">잘못된 확신</span>을 준다</h2>
+    <div class="tri">
+      <div class="col-pro">
+        <div class="col-h">장점</div>
+        <ul>
+          <li>AI 답변 품질 안정화</li>
+          <li>맥락 설명 반복 감소</li>
+          <li>온보딩 비용 감소</li>
+          <li>리뷰 기준 공유</li>
+          <li>Agent 성공률 증가</li>
+          <li>암묵지 보존</li>
+        </ul>
+      </div>
+      <div class="col-con">
+        <div class="col-h">단점</div>
+        <ul>
+          <li>초기 구축 비용</li>
+          <li>방치하면 썩는다</li>
+          <li>코드와 어긋나면 위험</li>
+          <li>너무 길면 안 본다</li>
+          <li>죽은 문서함이 될 위험</li>
+        </ul>
+      </div>
+      <div class="col-ops">
+        <div class="col-h">운영 원칙</div>
+        <ul>
+          <li>코드 변경 시 관련 Wiki도 같이 수정</li>
+          <li>큰 설계 변경은 Decision 문서로</li>
+          <li>Agent가 자주 틀린 부분을 Wiki에 반영</li>
+          <li>작업 단위로 짧게 쪼갠다</li>
+          <li>Owner를 정하고 리뷰 기준에 포함</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 : 결론 -->
+  <section class="slide" data-note="마무리 멘트: 'AI에게 코드를 맡기는 시대에는, 코드만 잘 정리하는 팀보다 AI가 참고할 맥락을 잘 정리하는 팀이 더 빨라질 수 있습니다.' 또는 더 직설적으로: 'LLM Wiki는 문서화가 아니라, AI가 실무에서 사고 덜 치게 만드는 안전장치입니다.'">
+    <div class="eyebrow">11 — 결론</div>
+    <p class="closer">LLM Wiki는 예쁜 문서가 아니다.<br><br>
+    AI가 잘못 판단하지 않도록 프로젝트의 <span class="hi-edge">판단 기준을 외부화</span>하는 작업이다.</p>
+    <p class="mic-drop">프롬프트를 잘 쓰는 팀보다,
+    <strong>AI가 참고할 맥락을 잘 관리하는 팀</strong>이 AI를 더 잘 쓰게 된다.</p>
+  </section>
+
+</div>
+
+<div class="tapzone left" id="tapL" aria-label="이전"></div>
+<div class="tapzone right" id="tapR" aria-label="다음"></div>
+
+<div class="nav">
+  <button id="prev" aria-label="이전 슬라이드">‹</button>
+  <span class="count"><span id="cur">1</span> / <span id="tot">12</span></span>
+  <button id="next" aria-label="다음 슬라이드">›</button>
+</div>
+<div class="hint" id="hint"><kbd>←</kbd> <kbd>→</kbd> 이동 · <kbd>N</kbd> 노트 · <kbd>H</kbd> 안내 숨김</div>
+
+<div class="notes" id="notes">
+  <div class="nh">발표자 노트 · <span id="noteIdx">1</span>/12</div>
+  <div class="nbody" id="noteBody"></div>
+</div>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  const tot=slides.length;let i=0;
+  document.getElementById('tot').textContent=tot;
+  const prog=document.getElementById('prog');
+  const noteBody=document.getElementById('noteBody');
+  const noteIdx=document.getElementById('noteIdx');
+  function go(n){
+    i=Math.max(0,Math.min(tot-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    document.getElementById('cur').textContent=i+1;
+    prog.style.width=((i+1)/tot*100)+'%';
+    slides[i].scrollTop=0;
+    noteBody.textContent=slides[i].dataset.note||'(노트 없음)';
+    noteIdx.textContent=i+1;
+  }
+  document.getElementById('next').onclick=()=>go(i+1);
+  document.getElementById('prev').onclick=()=>go(i-1);
+  document.getElementById('tapR').onclick=()=>go(i+1);
+  document.getElementById('tapL').onclick=()=>go(i-1);
+  const notes=document.getElementById('notes');
+  function toggleNotes(){
+    const open=notes.classList.toggle('show');
+    document.body.classList.toggle('notes-open',open);
+  }
+  addEventListener('keydown',e=>{
+    if(['ArrowRight','PageDown'].includes(e.key)){e.preventDefault();go(i+1)}
+    if(e.key===' '&&!e.shiftKey){e.preventDefault();go(i+1)}
+    if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();go(i-1)}
+    if(e.key==='Home')go(0); if(e.key==='End')go(tot-1);
+    if(e.key==='n'||e.key==='N'){e.preventDefault();toggleNotes()}
+    if(e.key==='h'||e.key==='H'){e.preventDefault();
+      document.getElementById('hint').style.display=
+        document.getElementById('hint').style.display==='none'?'':'none';}
+  });
+  let tx=0,ty=0;
+  addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});
+  addEventListener('touchend',e=>{
+    const dx=e.changedTouches[0].clientX-tx, dy=e.changedTouches[0].clientY-ty;
+    if(Math.abs(dx)>60 && Math.abs(dx)>Math.abs(dy)*1.5) dx<0?go(i+1):go(i-1);
+  },{passive:true});
+  go(0);
+</script>
+</body>
+</html>
