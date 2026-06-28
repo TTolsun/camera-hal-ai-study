@@ -59,12 +59,12 @@ npx serve docs
 
 각 페이지가 자체 `.topnav`를 가지며, 현재 페이지 링크에 `class="active"` + `aria-current="page"`를 답니다. 페이지를 추가/이름변경하면 모든 페이지의 nav를 함께 고쳐야 합니다.
 
-### 5. 저장소 이름 ↔ 발행 위치 불일치 (주의)
+### 5. 저장소 · 발행 위치
 
 - 로컬/원격 저장소: `TTolsun/camera-hal-ai-study`
-- 라이브 사이트 · 이슈 링크가 가리키는 곳: `TTolsun/AI_Study_Plan` (`https://ttolsun.github.io/AI_Study_Plan/`), README 제목도 `# AI_Study_Plan`
+- 라이브 사이트: `https://ttolsun.github.io/camera-hal-ai-study/`
 
-`config.yml`의 contact URL과 usecases 페이지의 "AI Item 제안하기" 버튼 링크(`github.com/TTolsun/AI_Study_Plan/issues/new?template=ai-item-request.yml`)는 **실제 발행 저장소 기준**입니다. 이 링크들을 수정할 때 어느 저장소가 실제로 Pages를 호스팅하는지 먼저 확인하세요.
+`config.yml`의 contact URL과 usecases 페이지의 "AI Item 제안하기" 버튼 링크(`github.com/TTolsun/camera-hal-ai-study/issues/new?template=ai-item-request.yml`)는 이 저장소를 가리킵니다. 과거 이름은 `AI_Study_Plan`이었으니, 잔여 참조(`ttolsun.github.io/AI_Study_Plan`, `github.com/TTolsun/AI_Study_Plan`)가 보이면 모두 `camera-hal-ai-study`로 갱신하세요.
 
 ## 콘텐츠 규약
 
